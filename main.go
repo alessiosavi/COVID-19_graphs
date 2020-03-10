@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"net/http"
 	"net/url"
 	"time"
 
@@ -25,89 +25,100 @@ type JsonData struct {
 	Datetime               time.Time
 }
 
+const filePath string = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-province.json"
+const dbName string = "MyDB"
+
 func main() {
 
-	filePath := "/home/alessiosavi/WORKSPACE/COVID-19/dati-json/dpc-covid19-ita-province.json"
-	var j []byte
-	var jsonData []JsonData
+	var (
+		con          *client.Client // Client for push data into InfluxDB
+		host         *url.URL       // Host related to the InfluxDB instance
+		httpResponse *http.Response // Response related to the HTTP request
+		jsonData     []JsonData     // Data retrieved from json
+		touscanyData []JsonData     // Data filtered only for touscany
+		err          error
+	)
+
+	// Initialize the URL for the InfluxDB instance
+	if host, err = url.Parse("http://localhost:8086"); err != nil {
+		panic(err)
+	}
+	// Initialize the InfluxDB client
+	if con, err = client.NewClient(client.Config{URL: *host}); err != nil {
+		panic(err)
+	}
+	// Verify that InfluxDB is available
+	if _, _, err = con.Ping(); err != nil {
+		panic(err)
+	}
+
+	touscanyData = retrieveProvinceData(httpResponse, jsonData, "Toscana", filePath)
+	dbResponse := saveInfluxProvinceData(touscanyData, con)
+	fmt.Printf("%+v\n", dbResponse)
+}
+
+func saveInfluxProvinceData(touscanyData []JsonData, con *client.Client) *client.Response {
+	var dbResponse *client.Response // Response related to the data pushed into InfluxDB
 	var err error
-	if j, err = ioutil.ReadFile(filePath); err != nil {
-		panic(err)
-	}
 
-	if err = json.Unmarshal(j, &jsonData); err != nil {
-		panic(err)
-	}
-	fmt.Printf("%d\n", len(jsonData))
-	var touscanyData []JsonData
-
-	if loc, err := time.LoadLocation("Europe/Rome"); err != nil {
-		panic(err)
-	} else {
-		time.Local = loc
-	}
-	// Create a client
-	//var graphiteClient *graphite.Client
-	//if graphiteClient, err = graphite.NewClient("tcp://127.0.0.1:2003", "", 1*time.Second); err != nil {
-	//	panic(err)
-	//}
-
-	host, err := url.Parse(fmt.Sprintf("http://%s:%d", "localhost", 8086))
-	if err != nil {
-		panic(err)
-	}
-	con, err := client.NewClient(client.Config{URL: *host})
-	if err != nil {
-		panic(err)
-	}
-
-	for i := range jsonData {
-		if jsonData[i].DenominazioneRegione == "Toscana" {
-			if jsonData[i].TotaleCasi > 0 {
-				touscanyData = append(touscanyData, jsonData[i])
-			}
-		}
-	}
+	// Initialize the list of event that have to be pushed into InfluxDB
 	pts := make([]client.Point, len(touscanyData))
-
 	for i := range touscanyData {
-		var t time.Time
-
-		t, err := fmtdate.Parse("YYYY-MM-DD hh:mm:ss", touscanyData[i].Data)
-		if err != nil {
-			panic(err)
-		}
-
-		touscanyData[i].Datetime = t
-		fmt.Println(touscanyData[i].Datetime)
-
 		fmt.Println("Case: ", touscanyData[i])
 		pts[i] = client.Point{
 			Measurement: "all_touscany_case",
 			Tags:        nil,
 			Time:        touscanyData[i].Datetime,
-			Fields: map[string]interface{}{
-				touscanyData[i].DenominazioneProvincia: touscanyData[i].TotaleCasi}}
-
-		bps := client.BatchPoints{
-			Points:   pts,
-			Database: "mydb"}
-		r, err := con.Write(bps)
-		if err != nil {
-			panic(err)
-		}
-		fmt.Printf("%+v\n", r)
-		//// Create a Metric instance, and send this metric
-		//metric := &graphite.Metric{
-		//	Name:      "totale_casi",
-		//	Value:     touscanyData[i].TotaleCasi,
-		//	Timestamp: touscanyData[i].Datetime,
-		//}
-		////fmt.Printf("Inserting: %+v", metric)
-		//graphiteClient.SendMetric(metric)
+			Fields:      map[string]interface{}{touscanyData[i].DenominazioneProvincia: touscanyData[i].TotaleCasi}}
 	}
-	// Shutdown will block the caller until all metrics in buffer have been sent, or timeout occurs.
-	// If timeout occurs before all metrics flushed, metrics left in buffer will be lost.
-	//graphiteClient.Shutdown(10 * time.Second)
 
+	bps := client.BatchPoints{Points: pts, Database: dbName}
+
+	if dbResponse, err = con.Write(bps); err != nil {
+		panic(err)
+	}
+	return dbResponse
+}
+
+func retrieveProvinceData(httpResponse *http.Response, jsonData []JsonData, regionName, urlPath string) []JsonData {
+	var err error
+	var touscanyData []JsonData
+	// Retrieve the fresh data related to covid-19
+	if httpResponse, err = http.Get(urlPath); err != nil {
+		panic(err)
+	}
+
+	defer httpResponse.Body.Close()
+
+	decoder := json.NewDecoder(httpResponse.Body)
+	// Decode the json into the jsonData array
+	if err = decoder.Decode(&jsonData); err != nil {
+		panic(err)
+	}
+	httpResponse.Body.Close()
+
+	fmt.Printf("Retrieved %d data\n", len(jsonData))
+
+	// Set the local time
+	if loc, err := time.LoadLocation("Europe/Rome"); err != nil {
+		panic(err)
+	} else {
+		time.Local = loc
+	}
+
+	// Filtering the data that are only related to the Touscany region
+	for i := range jsonData {
+		if jsonData[i].DenominazioneRegione == regionName {
+			if jsonData[i].TotaleCasi > 0 {
+				var t time.Time
+				// Parse the time into a standard one
+				if t, err = fmtdate.Parse("YYYY-MM-DD hh:mm:ss", jsonData[i].Data); err != nil {
+					panic(err)
+				}
+				jsonData[i].Datetime = t
+				touscanyData = append(touscanyData, jsonData[i])
+			}
+		}
+	}
+	return touscanyData
 }
