@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/apex/log"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"time"
@@ -11,7 +13,7 @@ import (
 	"github.com/metakeule/fmtdate"
 )
 
-type JsonData struct {
+type ProvinceJsonData struct {
 	Data                   string  `json:"data"`
 	Stato                  string  `json:"stato"`
 	CodiceRegione          int     `json:"codice_regione"`
@@ -25,9 +27,27 @@ type JsonData struct {
 	Datetime               time.Time
 }
 
+type NationalJsonData struct {
+	Data                      string `json:"data"`
+	Stato                     string `json:"stato"`
+	RicoveratiConSintomi      int    `json:"ricoverati_con_sintomi"`
+	TerapiaIntensiva          int    `json:"terapia_intensiva"`
+	TotaleOspedalizzati       int    `json:"totale_ospedalizzati"`
+	IsolamentoDomiciliare     int    `json:"isolamento_domiciliare"`
+	TotaleAttualmentePositivi int    `json:"totale_attualmente_positivi"`
+	NuoviAttualmentePositivi  int    `json:"nuovi_attualmente_positivi"`
+	DimessiGuariti            int    `json:"dimessi_guariti"`
+	Deceduti                  int    `json:"deceduti"`
+	TotaleCasi                int    `json:"totale_casi"`
+	Tamponi                   int    `json:"tamponi"`
+	Datetime                  time.Time
+}
+
 const andamentoProvince string = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-province.json"
 const andamentoNazionale string = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-andamento-nazionale.json"
-const dbName string = "MyDB"
+
+const DB_NAME string = "MyDB"
+const HOSTNAME string = "http://localhost"
 
 func main() {
 
@@ -35,12 +55,14 @@ func main() {
 		con          *client.Client // Client for push data into InfluxDB
 		host         *url.URL       // Host related to the InfluxDB instance
 		httpResponse *http.Response // Response related to the HTTP request
-		provinceData []JsonData     // Data filtered only for touscany
+		provinceData []ProvinceJsonData
 		err          error
 	)
 
+	initDatabase()
+
 	// Initialize the URL for the InfluxDB instance
-	if host, err = url.Parse("http://localhost:8086"); err != nil {
+	if host, err = url.Parse(HOSTNAME + ":8086"); err != nil {
 		panic(err)
 	}
 	// Initialize the InfluxDB client
@@ -57,22 +79,50 @@ func main() {
 	fmt.Printf("%+v\n", dbResponse)
 }
 
-func saveInfluxProvinceData(touscanyData []JsonData, con *client.Client) *client.Response {
+func initDatabase() {
+
+	apiUrl := "http://localhost:8086"
+	resource := "/query"
+	data := url.Values{}
+	data.Set("q", "CREATE DATABASE "+DB_NAME)
+
+	u, _ := url.ParseRequestURI(apiUrl)
+	u.Path = resource
+	u.RawQuery = data.Encode()
+	urlStr := fmt.Sprintf("%v", u)
+
+	c := &http.Client{}
+	r, err := http.NewRequest("POST", urlStr, nil)
+
+	resp, _ := c.Do(r)
+
+	if err != nil || resp.StatusCode != http.StatusOK {
+		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		_ = resp.Body.Close()
+		bodyString := string(bodyBytes)
+		fmt.Printf("Error: %s\n", bodyString)
+	}
+}
+
+func saveInfluxProvinceData(provinceData []ProvinceJsonData, con *client.Client) *client.Response {
 	var dbResponse *client.Response // Response related to the data pushed into InfluxDB
 	var err error
 
 	// Initialize the list of event that have to be pushed into InfluxDB
-	pts := make([]client.Point, len(touscanyData))
-	for i := range touscanyData {
-		fmt.Println("Case: ", touscanyData[i])
+	pts := make([]client.Point, len(provinceData))
+	for i := range provinceData {
+		fmt.Println("Case: ", provinceData[i])
 		pts[i] = client.Point{
 			Measurement: "all_province_data",
 			Tags:        nil,
-			Time:        touscanyData[i].Datetime,
-			Fields:      map[string]interface{}{touscanyData[i].DenominazioneProvincia: touscanyData[i].TotaleCasi}}
+			Time:        provinceData[i].Datetime,
+			Fields:      map[string]interface{}{provinceData[i].DenominazioneProvincia: provinceData[i].TotaleCasi}}
 	}
 
-	bps := client.BatchPoints{Points: pts, Database: dbName}
+	bps := client.BatchPoints{Points: pts, Database: DB_NAME}
 
 	if dbResponse, err = con.Write(bps); err != nil {
 		panic(err)
@@ -80,9 +130,9 @@ func saveInfluxProvinceData(touscanyData []JsonData, con *client.Client) *client
 	return dbResponse
 }
 
-func retrieveProvinceData(httpResponse *http.Response, urlPath string) []JsonData {
+func retrieveProvinceData(httpResponse *http.Response, urlPath string) []ProvinceJsonData {
 	var err error
-	var jsonData []JsonData
+	var jsonData []ProvinceJsonData
 	// Retrieve the fresh data related to covid-19
 	if httpResponse, err = http.Get(urlPath); err != nil {
 		panic(err)
@@ -96,7 +146,7 @@ func retrieveProvinceData(httpResponse *http.Response, urlPath string) []JsonDat
 	}
 	_ = httpResponse.Body.Close()
 
-	var data []JsonData
+	var data []ProvinceJsonData
 	for i := range jsonData {
 		if jsonData[i].TotaleCasi > 0 {
 			var t time.Time
@@ -121,21 +171,13 @@ func retrieveProvinceData(httpResponse *http.Response, urlPath string) []JsonDat
 	return data
 }
 
-func filterCasesForRegion(jsonData []JsonData, regionName string) []JsonData {
-	var touscanyData []JsonData
-	var err error
+// The method is delegated to filter only the province that match the given input
+func filterCasesForRegion(jsonData []ProvinceJsonData, regionName string) []ProvinceJsonData {
+	var provinceData []ProvinceJsonData
 	for i := range jsonData {
 		if jsonData[i].DenominazioneRegione == regionName {
-			if jsonData[i].TotaleCasi > 0 {
-				var t time.Time
-				// Parse the time into a standard one
-				if t, err = fmtdate.Parse("YYYY-MM-DD hh:mm:ss", jsonData[i].Data); err != nil {
-					panic(err)
-				}
-				jsonData[i].Datetime = t
-				touscanyData = append(touscanyData, jsonData[i])
-			}
+			provinceData = append(provinceData, jsonData[i])
 		}
 	}
-	return touscanyData
+	return provinceData
 }
