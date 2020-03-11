@@ -19,3 +19,14 @@ http://10.5.0.5:3000/dashboards
 Using the following credentials:
  - username: admin
  - password: admin
+ 
+ 
+ ## Preview
+ 
+ ![Preview](./docs/covid-touscany.png)
+ 
+ ## Dataset
+ 
+ The data are retrieved from the following repo:
+ 
+ https://github.com/pcm-dpc/COVID-19
