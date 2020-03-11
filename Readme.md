@@ -23,7 +23,10 @@ Using the following credentials:
  
  ## Preview
  
- ![Preview](./docs/covid-touscany.png)
+ ![Preview](./docs/pt1.png)
+ ![Preview](./docs/pt2.png)
+ ![Preview](./docs/pt3.png)
+ ![Preview](./docs/pt4.png)
  
  ## Dataset
  

@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/apex/log"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -54,8 +53,8 @@ func main() {
 	var (
 		con          *client.Client // Client for push data into InfluxDB
 		host         *url.URL       // Host related to the InfluxDB instance
-		httpResponse *http.Response // Response related to the HTTP request
 		provinceData []ProvinceJsonData
+		nationalData []NationalJsonData
 		err          error
 	)
 
@@ -74,8 +73,11 @@ func main() {
 		panic(err)
 	}
 
-	provinceData = retrieveProvinceData(httpResponse, andamentoProvince)
+	provinceData = retrieveProvinceData(andamentoProvince)
 	dbResponse := saveInfluxProvinceData(provinceData, con)
+	fmt.Printf("%+v\n", dbResponse)
+	nationalData = retrieveNationalData(andamentoNazionale)
+	dbResponse = saveInfluxNationalData(nationalData, con)
 	fmt.Printf("%+v\n", dbResponse)
 }
 
@@ -99,7 +101,7 @@ func initDatabase() {
 	if err != nil || resp.StatusCode != http.StatusOK {
 		bodyBytes, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			log.Fatal(err.Error())
+			panic(err)
 		}
 		_ = resp.Body.Close()
 		bodyString := string(bodyBytes)
@@ -130,7 +132,8 @@ func saveInfluxProvinceData(provinceData []ProvinceJsonData, con *client.Client)
 	return dbResponse
 }
 
-func retrieveProvinceData(httpResponse *http.Response, urlPath string) []ProvinceJsonData {
+func retrieveProvinceData(urlPath string) []ProvinceJsonData {
+	var httpResponse *http.Response
 	var err error
 	var jsonData []ProvinceJsonData
 	// Retrieve the fresh data related to covid-19
@@ -169,6 +172,83 @@ func retrieveProvinceData(httpResponse *http.Response, urlPath string) []Provinc
 	}
 
 	return data
+}
+
+func retrieveNationalData(urlPath string) []NationalJsonData {
+	var httpResponse *http.Response
+	var err error
+	var jsonData []NationalJsonData
+	// Retrieve the fresh data related to covid-19
+	if httpResponse, err = http.Get(urlPath); err != nil {
+		panic(err)
+	}
+	defer httpResponse.Body.Close()
+
+	decoder := json.NewDecoder(httpResponse.Body)
+	// Decode the json into the jsonData array
+	if err = decoder.Decode(&jsonData); err != nil {
+		panic(err)
+	}
+	_ = httpResponse.Body.Close()
+
+	var data []NationalJsonData
+	for i := range jsonData {
+		var t time.Time
+		// Parse the time into a standard one
+		if t, err = fmtdate.Parse("YYYY-MM-DD hh:mm:ss", jsonData[i].Data); err != nil {
+			panic(err)
+		}
+		jsonData[i].Datetime = t
+		data = append(data, jsonData[i])
+
+	}
+
+	fmt.Printf("Retrieved %d data\n", len(jsonData))
+
+	// Set the local time
+	if loc, err := time.LoadLocation("Europe/Rome"); err != nil {
+		panic(err)
+	} else {
+		time.Local = loc
+	}
+
+	return data
+}
+
+func saveInfluxNationalData(provinceData []NationalJsonData, con *client.Client) *client.Response {
+	var dbResponse *client.Response // Response related to the data pushed into InfluxDB
+	var err error
+
+	// Initialize the list of event that have to be pushed into InfluxDB
+	pts := make([]client.Point, len(provinceData))
+	for i := range provinceData {
+		fmt.Println("Case: ", provinceData[i])
+
+		var m map[string]interface{} = make(map[string]interface{})
+		m["ricoverati_con_sintomi"] = provinceData[i].RicoveratiConSintomi
+		m["terapia_intensiva"] = provinceData[i].TerapiaIntensiva
+		m["totale_ospedalizzati"] = provinceData[i].TotaleOspedalizzati
+		m["isolamento_domiciliare"] = provinceData[i].IsolamentoDomiciliare
+		m["totale_attualmente_positivi"] = provinceData[i].TotaleAttualmentePositivi
+		m["nuovi_attualmente_positivi"] = provinceData[i].NuoviAttualmentePositivi
+		m["dimessi_guariti"] = provinceData[i].DimessiGuariti
+		m["deceduti"] = provinceData[i].Deceduti
+		m["totale_casi"] = provinceData[i].TotaleCasi
+		m["tamponi"] = provinceData[i].Tamponi
+
+		pts[i] = client.Point{
+			Measurement: "state_data",
+			Tags:        nil,
+			Time:        provinceData[i].Datetime,
+			Fields:      m}
+	}
+
+	bps := client.BatchPoints{Points: pts, Database: DB_NAME}
+
+	if dbResponse, err = con.Write(bps); err != nil {
+		panic(err)
+	}
+	return dbResponse
 }
 
 // The method is delegated to filter only the province that match the given input
