@@ -53,8 +53,6 @@ func main() {
 		panic(err)
 	}
 
-
-
 	touscanyData = retrieveProvinceData(httpResponse, jsonData, "Toscana", andamentoProvince)
 	dbResponse := saveInfluxProvinceData(touscanyData, con)
 	fmt.Printf("%+v\n", dbResponse)
