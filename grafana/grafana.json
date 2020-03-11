@@ -74,7 +74,7 @@
       "targets": [
         {
           "groupBy": [],
-          "measurement": "all_touscany_case",
+          "measurement": "all_province_data",
           "orderByTime": "ASC",
           "policy": "default",
           "refId": "A",
@@ -139,7 +139,7 @@
       "targets": [
         {
           "groupBy": [],
-          "measurement": "all_touscany_case",
+          "measurement": "all_province_data",
           "orderByTime": "ASC",
           "policy": "default",
           "refId": "A",
@@ -204,7 +204,7 @@
       "targets": [
         {
           "groupBy": [],
-          "measurement": "all_touscany_case",
+          "measurement": "all_province_data",
           "orderByTime": "ASC",
           "policy": "default",
           "refId": "A",
@@ -269,7 +269,7 @@
       "targets": [
         {
           "groupBy": [],
-          "measurement": "all_touscany_case",
+          "measurement": "all_province_data",
           "orderByTime": "ASC",
           "policy": "default",
           "refId": "A",
@@ -334,7 +334,7 @@
       "targets": [
         {
           "groupBy": [],
-          "measurement": "all_touscany_case",
+          "measurement": "all_province_data",
           "orderByTime": "ASC",
           "policy": "default",
           "refId": "A",
@@ -399,7 +399,7 @@
       "targets": [
         {
           "groupBy": [],
-          "measurement": "all_touscany_case",
+          "measurement": "all_province_data",
           "orderByTime": "ASC",
           "policy": "default",
           "refId": "A",
@@ -464,7 +464,7 @@
       "targets": [
         {
           "groupBy": [],
-          "measurement": "all_touscany_case",
+          "measurement": "all_province_data",
           "orderByTime": "ASC",
           "policy": "default",
           "refId": "A",
@@ -529,7 +529,7 @@
       "targets": [
         {
           "groupBy": [],
-          "measurement": "all_touscany_case",
+          "measurement": "all_province_data",
           "orderByTime": "ASC",
           "policy": "default",
           "refId": "A",
@@ -594,7 +594,7 @@
       "targets": [
         {
           "groupBy": [],
-          "measurement": "all_touscany_case",
+          "measurement": "all_province_data",
           "orderByTime": "ASC",
           "policy": "default",
           "refId": "A",
@@ -659,7 +659,7 @@
       "targets": [
         {
           "groupBy": [],
-          "measurement": "all_touscany_case",
+          "measurement": "all_province_data",
           "orderByTime": "ASC",
           "policy": "default",
           "refId": "A",
@@ -739,7 +739,7 @@
       "targets": [
         {
           "groupBy": [],
-          "measurement": "all_touscany_case",
+          "measurement": "all_province_data",
           "orderByTime": "ASC",
           "policy": "autogen",
           "refId": "A",

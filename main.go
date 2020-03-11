@@ -35,8 +35,7 @@ func main() {
 		con          *client.Client // Client for push data into InfluxDB
 		host         *url.URL       // Host related to the InfluxDB instance
 		httpResponse *http.Response // Response related to the HTTP request
-		jsonData     []JsonData     // Data retrieved from json
-		touscanyData []JsonData     // Data filtered only for touscany
+		provinceData []JsonData     // Data filtered only for touscany
 		err          error
 	)
 
@@ -53,8 +52,8 @@ func main() {
 		panic(err)
 	}
 
-	touscanyData = retrieveProvinceData(httpResponse, jsonData, "Toscana", andamentoProvince)
-	dbResponse := saveInfluxProvinceData(touscanyData, con)
+	provinceData = retrieveProvinceData(httpResponse, andamentoProvince)
+	dbResponse := saveInfluxProvinceData(provinceData, con)
 	fmt.Printf("%+v\n", dbResponse)
 }
 
@@ -67,7 +66,7 @@ func saveInfluxProvinceData(touscanyData []JsonData, con *client.Client) *client
 	for i := range touscanyData {
 		fmt.Println("Case: ", touscanyData[i])
 		pts[i] = client.Point{
-			Measurement: "all_touscany_case",
+			Measurement: "all_province_data",
 			Tags:        nil,
 			Time:        touscanyData[i].Datetime,
 			Fields:      map[string]interface{}{touscanyData[i].DenominazioneProvincia: touscanyData[i].TotaleCasi}}
@@ -81,14 +80,13 @@ func saveInfluxProvinceData(touscanyData []JsonData, con *client.Client) *client
 	return dbResponse
 }
 
-func retrieveProvinceData(httpResponse *http.Response, jsonData []JsonData, regionName, urlPath string) []JsonData {
+func retrieveProvinceData(httpResponse *http.Response, urlPath string) []JsonData {
 	var err error
-
+	var jsonData []JsonData
 	// Retrieve the fresh data related to covid-19
 	if httpResponse, err = http.Get(urlPath); err != nil {
 		panic(err)
 	}
-
 	defer httpResponse.Body.Close()
 
 	decoder := json.NewDecoder(httpResponse.Body)
@@ -97,6 +95,19 @@ func retrieveProvinceData(httpResponse *http.Response, jsonData []JsonData, regi
 		panic(err)
 	}
 	_ = httpResponse.Body.Close()
+
+	var data []JsonData
+	for i := range jsonData {
+		if jsonData[i].TotaleCasi > 0 {
+			var t time.Time
+			// Parse the time into a standard one
+			if t, err = fmtdate.Parse("YYYY-MM-DD hh:mm:ss", jsonData[i].Data); err != nil {
+				panic(err)
+			}
+			jsonData[i].Datetime = t
+			data = append(data, jsonData[i])
+		}
+	}
 
 	fmt.Printf("Retrieved %d data\n", len(jsonData))
 
@@ -107,8 +118,7 @@ func retrieveProvinceData(httpResponse *http.Response, jsonData []JsonData, regi
 		time.Local = loc
 	}
 
-	// Filtering the data that are only related to the Touscany region
-	return filterCasesForRegion(jsonData, regionName)
+	return data
 }
 
 func filterCasesForRegion(jsonData []JsonData, regionName string) []JsonData {
