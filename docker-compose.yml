@@ -1,28 +1,40 @@
-influxdb:
-  image: influxdb:latest
-  container_name: influxdb
-  ports:
-    - "8083:8083"
-    - "8086:8086"
-    - "8090:8090"
-  volumes:
-    # Data persistency
-    # sudo mkdir -p /srv/docker/influxdb/data
-    - /srv/docker/influxdb/data:/var/lib/influxdb
+version: '3.4'
+services:
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    user: "0"
+    links:
+      - influxdb
+    volumes:
+      # Data persistency
+      - ./docker_data/grafana/data:/var/lib/grafana
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.5
+    depends_on:
+      - influxdb
+
+  influxdb:
+    image: influxdb:latest
+    container_name: influxdb
+    ports:
+      - "8083:8083"
+      - "8086:8086"
+      - "8090:8090"
+    volumes:
+      # Data persistency
+      - ./docker_data/influxdb/data:/var/lib/influxdb
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.6
 
 
-grafana:
-  image: grafana/grafana:latest
-  container_name: grafana
-  ports:
-    - "3000:3000"
-  env_file:
-    - 'env.grafana'
-  user: "0"
-  links:
-    - influxdb
-  volumes:
-    # Data persistency
-    # sudo mkdir -p /srv/docker/grafana/data;
-    - /srv/docker/grafana/data:/var/lib/grafana
-    # sudo chown -R $(whomi):$(whoami) /srv/docker
+networks:
+  vpcbr:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.5.0.0/16

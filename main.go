@@ -25,7 +25,8 @@ type JsonData struct {
 	Datetime               time.Time
 }
 
-const filePath string = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-province.json"
+const andamentoProvince string = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-province.json"
+const andamentoNazionale string = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-andamento-nazionale.json"
 const dbName string = "MyDB"
 
 func main() {
@@ -52,7 +53,9 @@ func main() {
 		panic(err)
 	}
 
-	touscanyData = retrieveProvinceData(httpResponse, jsonData, "Toscana", filePath)
+
+
+	touscanyData = retrieveProvinceData(httpResponse, jsonData, "Toscana", andamentoProvince)
 	dbResponse := saveInfluxProvinceData(touscanyData, con)
 	fmt.Printf("%+v\n", dbResponse)
 }
@@ -82,7 +85,7 @@ func saveInfluxProvinceData(touscanyData []JsonData, con *client.Client) *client
 
 func retrieveProvinceData(httpResponse *http.Response, jsonData []JsonData, regionName, urlPath string) []JsonData {
 	var err error
-	var touscanyData []JsonData
+
 	// Retrieve the fresh data related to covid-19
 	if httpResponse, err = http.Get(urlPath); err != nil {
 		panic(err)
@@ -95,7 +98,7 @@ func retrieveProvinceData(httpResponse *http.Response, jsonData []JsonData, regi
 	if err = decoder.Decode(&jsonData); err != nil {
 		panic(err)
 	}
-	httpResponse.Body.Close()
+	_ = httpResponse.Body.Close()
 
 	fmt.Printf("Retrieved %d data\n", len(jsonData))
 
@@ -107,6 +110,12 @@ func retrieveProvinceData(httpResponse *http.Response, jsonData []JsonData, regi
 	}
 
 	// Filtering the data that are only related to the Touscany region
+	return filterCasesForRegion(jsonData, regionName)
+}
+
+func filterCasesForRegion(jsonData []JsonData, regionName string) []JsonData {
+	var touscanyData []JsonData
+	var err error
 	for i := range jsonData {
 		if jsonData[i].DenominazioneRegione == regionName {
 			if jsonData[i].TotaleCasi > 0 {
