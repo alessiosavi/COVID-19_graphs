@@ -2,6 +2,17 @@
 
 Analyze the cases related to the COVID19 in Touscany.
 
+## Demo
+
+A running instance is available at:
+
+http://covid19.hackx.com:3000/?orgId=1
+
+You have to log-in with the following credentials:
+
+ - Username: `guest`
+ - Password: `password`
+
 ## Usage
 
 This repository provides a InfluxDB + Grafana environment in order to track the evolution of the number of COVID19 cases.
@@ -26,8 +37,7 @@ Using the following credentials:
  ![Preview](./docs/pt1.png)
  ![Preview](./docs/pt2.png)
  ![Preview](./docs/pt3.png)
- ![Preview](./docs/pt4ith
-  .png)
+ ![Preview](./docs/pt4.png)
  
  ## Dataset
  
