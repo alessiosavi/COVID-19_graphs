@@ -84,10 +84,11 @@ func main() {
 	fmt.Printf("%+v\n", dbResponse)
 	provinceData = nil
 	nationalData = retrieveNationalData(andamentoNazionale)
-	dbResponse = saveInfluxNationalData(nationalData, con)
+	dbResponse = saveInfluxNationalData(nationalData, con, "state_data")
 	nationalData = nil
+	fmt.Printf("%+v\n", dbResponse)
 	regionData = retrieveNationalData(andamentoRegioni)
-	dbResponse = saveInfluxNationalData(regionData, con)
+	dbResponse = saveInfluxNationalData(regionData, con, "regions_data")
 	regionData = nil
 	fmt.Printf("%+v\n", dbResponse)
 }
@@ -226,7 +227,7 @@ func retrieveNationalData(urlPath string) []RegionsJsonData {
 	return data
 }
 
-func saveInfluxNationalData(provinceData []RegionsJsonData, con *client.Client) *client.Response {
+func saveInfluxNationalData(provinceData []RegionsJsonData, con *client.Client, dbName string) *client.Response {
 	var dbResponse *client.Response // Response related to the data pushed into InfluxDB
 	var err error
 
@@ -235,27 +236,27 @@ func saveInfluxNationalData(provinceData []RegionsJsonData, con *client.Client) 
 	for i := range provinceData {
 		fmt.Println("Case: ", provinceData[i])
 
-var m map[string]interface{} = make(map[string]interface{})
-m["codice_regione"] = provinceData[i].CodiceRegione
-m["denominazione_regione"] = provinceData[i].DenominazioneRegione
-m["lat"] = provinceData[i].Lat
-m["long"] = provinceData[i].Long
-m["ricoverati_con_sintomi"] = provinceData[i].RicoveratiConSintomi
-m["terapia_intensiva"] = provinceData[i].TerapiaIntensiva
-m["totale_ospedalizzati"] = provinceData[i].TotaleOspedalizzati
-m["isolamento_domiciliare"] = provinceData[i].IsolamentoDomiciliare
-m["totale_attualmente_positivi"] = provinceData[i].TotaleAttualmentePositivi
-m["nuovi_attualmente_positivi"] = provinceData[i].NuoviAttualmentePositivi
-m["dimessi_guariti"] = provinceData[i].DimessiGuariti
-m["deceduti"] = provinceData[i].Deceduti
-m["totale_casi"] = provinceData[i].TotaleCasi
-m["tamponi"] = provinceData[i].Tamponi
+		var m map[string]interface{} = make(map[string]interface{})
+		m["codice_regione"] = provinceData[i].CodiceRegione
+		m["denominazione_regione"] = provinceData[i].DenominazioneRegione
+		m["lat"] = provinceData[i].Lat
+		m["long"] = provinceData[i].Long
+		m["ricoverati_con_sintomi"] = provinceData[i].RicoveratiConSintomi
+		m["terapia_intensiva"] = provinceData[i].TerapiaIntensiva
+		m["totale_ospedalizzati"] = provinceData[i].TotaleOspedalizzati
+		m["isolamento_domiciliare"] = provinceData[i].IsolamentoDomiciliare
+		m["totale_attualmente_positivi"] = provinceData[i].TotaleAttualmentePositivi
+		m["nuovi_attualmente_positivi"] = provinceData[i].NuoviAttualmentePositivi
+		m["dimessi_guariti"] = provinceData[i].DimessiGuariti
+		m["deceduti"] = provinceData[i].Deceduti
+		m["totale_casi"] = provinceData[i].TotaleCasi
+		m["tamponi"] = provinceData[i].Tamponi
 
-pts[i] = client.Point{
-	Measurement: "regions_data",
-	Tags:        nil,
-	Time:        provinceData[i].Datetime,
-	Fields:      m}
+		pts[i] = client.Point{
+			Measurement: dbName,
+			Tags:        map[string]string{"regione": provinceData[i].DenominazioneRegione},
+			Time:        provinceData[i].Datetime,
+			Fields:      m}
 	}
 
 	bps := client.BatchPoints{Points: pts, Database: DB_NAME}
