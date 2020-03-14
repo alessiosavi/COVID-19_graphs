@@ -1,16 +1,28 @@
 package main
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/influxdata/influxdb/client"
 	"github.com/metakeule/fmtdate"
 )
+
+type WorldWideData struct {
+	Date        time.Time
+	State       string
+	NewCases    int64
+	NewDeaths   int64
+	TotalCases  int64
+	TotalDeaths int64
+}
 
 type ProvinceJsonData struct {
 	Data                   string  `json:"data"`
@@ -49,7 +61,7 @@ type RegionsJsonData struct {
 const andamentoProvince string = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-province.json"
 const andamentoNazionale string = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-andamento-nazionale.json"
 const andamentoRegioni string = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-regioni.json"
-
+const andamentoMondiale string = "https://covid.ourworldindata.org/data/full_data.csv"
 const DB_NAME string = "MyDB"
 const HOSTNAME string = "http://localhost"
 
@@ -61,6 +73,7 @@ func main() {
 		provinceData []ProvinceJsonData
 		nationalData []RegionsJsonData
 		regionData   []RegionsJsonData
+		wordData     []WorldWideData
 		err          error
 	)
 
@@ -90,11 +103,19 @@ func main() {
 	regionData = retrieveNationalData(andamentoRegioni)
 	dbResponse = saveInfluxNationalData(regionData, con, "regions_data")
 	regionData = nil
+	wordData = retrieveWorldWideData(andamentoMondiale)
+	dbResponse = saveInfluxWordlData(wordData, con)
 	fmt.Printf("%+v\n", dbResponse)
 }
 
 func initDatabase() {
 
+	var (
+		req       *http.Request
+		resp      *http.Response
+		err       error
+		bodyBytes []byte
+	)
 	apiUrl := "http://localhost:8086"
 	resource := "/query"
 	data := url.Values{}
@@ -106,18 +127,23 @@ func initDatabase() {
 	urlStr := fmt.Sprintf("%v", u)
 
 	c := &http.Client{}
-	r, err := http.NewRequest("POST", urlStr, nil)
+	if req, err = http.NewRequest("POST", urlStr, nil); err != nil {
+		panic(err)
+	}
 
-	resp, _ := c.Do(r)
+	if resp, err = c.Do(req); err != nil {
+		panic(err)
+	}
 
-	if err != nil || resp.StatusCode != http.StatusOK {
-		bodyBytes, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
+	if resp.StatusCode != http.StatusOK {
+		if bodyBytes, err = ioutil.ReadAll(resp.Body); err != nil {
 			panic(err)
 		}
 		_ = resp.Body.Close()
 		bodyString := string(bodyBytes)
 		fmt.Printf("Error: %s\n", bodyString)
+	} else {
+		fmt.Printf("Database [%s] initialized\n", DB_NAME)
 	}
 }
 
@@ -154,11 +180,17 @@ func retrieveProvinceData(urlPath string) []ProvinceJsonData {
 	}
 	defer httpResponse.Body.Close()
 
-	decoder := json.NewDecoder(httpResponse.Body)
-	// Decode the json into the jsonData array
-	if err = decoder.Decode(&jsonData); err != nil {
-		panic(err)
-	}
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(httpResponse.Body)
+	newBytes := buf.Bytes()
+	trimmedBytes := bytes.Trim(newBytes, "\xef\xbb\xbf")
+	//
+	//decoder := json.NewDecoder(httpResponse.Body)
+	//// Decode the json into the jsonData array
+	//if err = decoder.Decode(&jsonData); err != nil {
+	//	panic(err)
+	//}
+	json.Unmarshal(trimmedBytes, &jsonData)
 	_ = httpResponse.Body.Close()
 
 	var data []ProvinceJsonData
@@ -196,11 +228,24 @@ func retrieveNationalData(urlPath string) []RegionsJsonData {
 	}
 	defer httpResponse.Body.Close()
 
-	decoder := json.NewDecoder(httpResponse.Body)
-	// Decode the json into the jsonData array
-	if err = decoder.Decode(&jsonData); err != nil {
-		panic(err)
-	}
+	//decoder := json.NewDecoder(httpResponse.Body)
+	//// Decode the json into the jsonData array
+	//if err = decoder.Decode(&jsonData); err != nil {
+	//	panic(err)
+	//}
+
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(httpResponse.Body)
+	newBytes := buf.Bytes()
+	trimmedBytes := bytes.Trim(newBytes, "\xef\xbb\xbf")
+	//
+	//decoder := json.NewDecoder(httpResponse.Body)
+	//// Decode the json into the jsonData array
+	//if err = decoder.Decode(&jsonData); err != nil {
+	//	panic(err)
+	//}
+	json.Unmarshal(trimmedBytes, &jsonData)
+	_ = httpResponse.Body.Close()
 	_ = httpResponse.Body.Close()
 
 	var data []RegionsJsonData
@@ -259,6 +304,92 @@ func saveInfluxNationalData(provinceData []RegionsJsonData, con *client.Client, 
 			Fields:      m}
 	}
 
+	bps := client.BatchPoints{Points: pts, Database: DB_NAME}
+
+	if dbResponse, err = con.Write(bps); err != nil {
+		panic(err)
+	}
+	return dbResponse
+}
+
+func retrieveWorldWideData(urlPath string) []WorldWideData {
+	var (
+		httpResponse *http.Response
+		err          error
+		lines        [][]string
+		v            int64
+	)
+
+	if httpResponse, err = http.Get(urlPath); err != nil {
+		panic(err)
+	}
+	defer httpResponse.Body.Close()
+	if lines, err = csv.NewReader(httpResponse.Body).ReadAll(); err != nil {
+		panic(err)
+	}
+
+	var wordWideData []WorldWideData = make([]WorldWideData, len(lines))
+	for i := 1; i < len(lines); i++ {
+		var t time.Time
+		// Parse the time into a standard one
+		if t, err = fmtdate.Parse("YYYY-MM-DD", lines[i][0]); err != nil {
+			panic(err)
+		}
+		wordWideData[i].Date = t
+		wordWideData[i].State = lines[i][1]
+
+		if lines[i][2] != "" {
+			if v, err = strconv.ParseInt(lines[i][2], 10, 32); err != nil {
+				panic(err)
+			}
+			wordWideData[i].NewCases = v
+		}
+
+		if lines[i][3] != "" {
+			if v, err = strconv.ParseInt(lines[i][3], 10, 32); err != nil {
+				panic(err)
+			}
+			wordWideData[i].NewDeaths = v
+		}
+
+		if lines[i][4] != "" {
+			if v, err = strconv.ParseInt(lines[i][4], 10, 32); err != nil {
+				panic(err)
+			}
+			wordWideData[i].TotalCases = v
+		}
+
+		if lines[i][5] != "" {
+			if v, err = strconv.ParseInt(lines[i][5], 10, 32); err != nil {
+				panic(err)
+			}
+			wordWideData[i].TotalDeaths = v
+		}
+	}
+	return wordWideData
+}
+
+func saveInfluxWordlData(worldData []WorldWideData, con *client.Client) *client.Response {
+	var dbResponse *client.Response // Response related to the data pushed into InfluxDB
+	var err error
+
+	// Initialize the list of event that have to be pushed into InfluxDB
+	pts := make([]client.Point, len(worldData))
+	for i := range worldData {
+		fmt.Println("Case: ", worldData[i])
+
+		var m map[string]interface{} = make(map[string]interface{})
+		m["total_deaths"] = worldData[i].TotalDeaths
+		m["total_cases"] = worldData[i].TotalCases
+		m["new_deaths"] = worldData[i].NewDeaths
+		m["new_cases"] = worldData[i].NewCases
+
+		pts[i] = client.Point{
+			Measurement: "all_world_data",
+			Tags:        map[string]string{"nation": worldData[i].State},
+			Time:        worldData[i].Date,
+			Fields:      m}
+	}
 	bps := client.BatchPoints{Points: pts, Database: DB_NAME}
 
 	if dbResponse, err = con.Write(bps); err != nil {
