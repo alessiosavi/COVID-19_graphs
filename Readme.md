@@ -1,12 +1,12 @@
-# Touscany-COVID-19_graphs
+# COVID-19_graphs
 
-Analyze the cases related to the COVID19 in Touscany.
+Analyze the cases related to the COVID19 in Italy.
 
 ## Demo
 
 A running instance is available at:
 
-http://covid19.hackx.com:3000/?orgId=1
+http://covid19.hackx.com:3000/d/OO1TC7XZk/covid-19-cases?orgId=1
 
 You have to log-in with the following credentials:
 

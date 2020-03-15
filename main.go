@@ -327,6 +327,7 @@ func retrieveWorldWideData(urlPath string) []WorldWideData {
 	if lines, err = csv.NewReader(httpResponse.Body).ReadAll(); err != nil {
 		panic(err)
 	}
+	_ = httpResponse.Body.Close()
 
 	var wordWideData []WorldWideData = make([]WorldWideData, len(lines))
 	for i := 1; i < len(lines); i++ {
