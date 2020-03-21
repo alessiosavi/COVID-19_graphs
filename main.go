@@ -90,15 +90,15 @@ func inTimeSpan(check time.Time) bool {
 func main() {
 
 	var (
-		con          *client.Client // Client for push data into InfluxDB
-		host         *url.URL       // Host related to the InfluxDB instance
-		resp         *http.Response
-		provinceData []ProvinceJsonData
-		nationalData []RegionsJsonData
-		regionData   []RegionsJsonData
-		wordData     []WorldWideData
-		data         []byte
-		body         string
+		con          *client.Client     // Client for push data into InfluxDB
+		host         *url.URL           // Host related to the InfluxDB instance
+		resp         *http.Response     // Response of the http request
+		provinceData []ProvinceJsonData // Data related to the provinces
+		nationalData []RegionsJsonData  // Data related to the nations
+		regionData   []RegionsJsonData  // Data related to the regions
+		wordData     []WorldWideData    // Data related to the world
+		data         []byte             // Body related to the response
+		body         string             // Body related to the response (string)
 		err          error
 	)
 
@@ -106,6 +106,7 @@ func main() {
 	startTime = time.Date(t.Year(), t.Month(), t.Day(), 17, 50, 0, 0, time.Local)
 	endTime = time.Date(t.Year(), t.Month(), t.Day(), 19, 0, 0, 0, time.Local)
 
+	// Request body to send to the lambda in order to verify that the given repository have a commit after the given time
 	reqData := requestData{
 		Hours:   18,
 		Minutes: 0,
@@ -119,27 +120,32 @@ func main() {
 		panic("No lambda url specified")
 	}
 
-	initDatabase()
-
 	if data, err = json.Marshal(reqData); err != nil {
 		panic(err)
 	}
+	// Initialize the URL for the InfluxDB instance
+	if host, err = url.Parse(HOSTNAME + ":8086"); err != nil {
+		panic(err)
+	}
+
+	// Initialize influxdb database
+	initDatabase()
 
 	for {
+		// Check that the current time is in the span (from ~18:00 to ~19:00)
 		if inTimeSpan(time.Now()) {
+			// Send the request to the lambda
 			if resp, err = http.Post(*lambdaUrl, "application/json", bytes.NewBuffer(data)); err != nil {
 				panic(err)
 			}
 
+			// Retrieve the body
 			if body, err = getBody(resp.Body); err != nil {
 				panic(err)
 			}
 
+			// Check the body in order to verify the result of the lambda
 			if strings.Contains(body, "true") {
-				// Initialize the URL for the InfluxDB instance
-				if host, err = url.Parse(HOSTNAME + ":8086"); err != nil {
-					panic(err)
-				}
 				// Initialize the InfluxDB client
 				if con, err = client.NewClient(client.Config{URL: *host}); err != nil {
 					panic(err)
@@ -149,6 +155,7 @@ func main() {
 					panic(err)
 				}
 
+				// Retrieve the data and save into InfluxDB
 				provinceData = retrieveProvinceData(andamentoProvince)
 				dbResponse := saveInfluxProvinceData(provinceData, con)
 				fmt.Printf("%+v\n", dbResponse)
@@ -166,8 +173,8 @@ func main() {
 				fmt.Printf("%+v\n", dbResponse)
 			} else {
 				// Wait 5 minuts before check another time that a commit is made
-				time.Sleep(time.Duration(5 * time.Minute))
-				fmt.Println("Waiting 5 minuts")
+				fmt.Println("Waiting 5 seconds")
+				time.Sleep(time.Duration(5 * time.Second))
 			}
 		} else {
 			fmt.Println("Current date is not in the interval")
@@ -258,12 +265,6 @@ func retrieveProvinceData(urlPath string) []ProvinceJsonData {
 	buf.ReadFrom(httpResponse.Body)
 	newBytes := buf.Bytes()
 	trimmedBytes := bytes.Trim(newBytes, "\xef\xbb\xbf")
-	//
-	//decoder := json.NewDecoder(httpResponse.Body)
-	//// Decode the json into the jsonData array
-	//if err = decoder.Decode(&jsonData); err != nil {
-	//	panic(err)
-	//}
 	json.Unmarshal(trimmedBytes, &jsonData)
 	_ = httpResponse.Body.Close()
 
@@ -302,22 +303,10 @@ func retrieveNationalData(urlPath string) []RegionsJsonData {
 	}
 	defer httpResponse.Body.Close()
 
-	//decoder := json.NewDecoder(httpResponse.Body)
-	//// Decode the json into the jsonData array
-	//if err = decoder.Decode(&jsonData); err != nil {
-	//	panic(err)
-	//}
-
 	buf := new(bytes.Buffer)
 	buf.ReadFrom(httpResponse.Body)
 	newBytes := buf.Bytes()
 	trimmedBytes := bytes.Trim(newBytes, "\xef\xbb\xbf")
-	//
-	//decoder := json.NewDecoder(httpResponse.Body)
-	//// Decode the json into the jsonData array
-	//if err = decoder.Decode(&jsonData); err != nil {
-	//	panic(err)
-	//}
 	json.Unmarshal(trimmedBytes, &jsonData)
 	_ = httpResponse.Body.Close()
 	_ = httpResponse.Body.Close()
