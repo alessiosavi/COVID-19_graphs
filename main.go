@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/influxdata/influxdb/client"
@@ -65,60 +68,132 @@ const andamentoMondiale string = "https://covid.ourworldindata.org/data/full_dat
 const DB_NAME string = "MyDB"
 const HOSTNAME string = "http://localhost"
 
+type requestData struct {
+	Hours   int    `json:"hours"`
+	Minutes int    `json:"minutes"`
+	Second  int    `json:"second"`
+	Url     string `json:"url"`
+}
+
+var startTime time.Time
+var endTime time.Time
+
+func inTimeSpan(check time.Time) bool {
+	if startTime.Before(endTime) {
+		return !check.Before(startTime) && !check.After(endTime)
+	}
+	if startTime.Equal(endTime) {
+		return check.Equal(startTime)
+	}
+	return !startTime.After(check) || !endTime.Before(check)
+}
 func main() {
 
 	var (
 		con          *client.Client // Client for push data into InfluxDB
 		host         *url.URL       // Host related to the InfluxDB instance
+		resp         *http.Response
 		provinceData []ProvinceJsonData
 		nationalData []RegionsJsonData
 		regionData   []RegionsJsonData
 		wordData     []WorldWideData
+		data         []byte
+		body         string
 		err          error
 	)
 
+	t := time.Now()
+	startTime = time.Date(t.Year(), t.Month(), t.Day(), 17, 50, 0, 0, time.Local)
+	endTime = time.Date(t.Year(), t.Month(), t.Day(), 19, 0, 0, 0, time.Local)
+
+	reqData := requestData{
+		Hours:   18,
+		Minutes: 0,
+		Second:  0,
+		Url:     "https://api.github.com/repos/pcm-dpc/COVID-19/commits",
+	}
+
+	lambdaUrl := flag.String("lambdaUrl", "", "Url related to the lambda delegated to verify that a commit is made")
+	flag.Parse()
+	if *lambdaUrl == "" {
+		panic("No lambda url specified")
+	}
+
 	initDatabase()
 
-	// Initialize the URL for the InfluxDB instance
-	if host, err = url.Parse(HOSTNAME + ":8086"); err != nil {
-		panic(err)
-	}
-	// Initialize the InfluxDB client
-	if con, err = client.NewClient(client.Config{URL: *host}); err != nil {
-		panic(err)
-	}
-	// Verify that InfluxDB is available
-	if _, _, err = con.Ping(); err != nil {
+	if data, err = json.Marshal(reqData); err != nil {
 		panic(err)
 	}
 
-	provinceData = retrieveProvinceData(andamentoProvince)
-	dbResponse := saveInfluxProvinceData(provinceData, con)
-	fmt.Printf("%+v\n", dbResponse)
-	provinceData = nil
-	nationalData = retrieveNationalData(andamentoNazionale)
-	dbResponse = saveInfluxNationalData(nationalData, con, "state_data")
-	nationalData = nil
-	fmt.Printf("%+v\n", dbResponse)
-	regionData = retrieveNationalData(andamentoRegioni)
-	dbResponse = saveInfluxNationalData(regionData, con, "regions_data")
-	regionData = nil
-	wordData = retrieveWorldWideData(andamentoMondiale)
-	dbResponse = saveInfluxWordlData(wordData, con)
-	fmt.Printf("%+v\n", dbResponse)
+	for {
+		if inTimeSpan(time.Now()) {
+			if resp, err = http.Post(*lambdaUrl, "application/json", bytes.NewBuffer(data)); err != nil {
+				panic(err)
+			}
+
+			if body, err = getBody(resp.Body); err != nil {
+				panic(err)
+			}
+
+			if strings.Contains(body, "true") {
+				// Initialize the URL for the InfluxDB instance
+				if host, err = url.Parse(HOSTNAME + ":8086"); err != nil {
+					panic(err)
+				}
+				// Initialize the InfluxDB client
+				if con, err = client.NewClient(client.Config{URL: *host}); err != nil {
+					panic(err)
+				}
+				// Verify that InfluxDB is available
+				if _, _, err = con.Ping(); err != nil {
+					panic(err)
+				}
+
+				provinceData = retrieveProvinceData(andamentoProvince)
+				dbResponse := saveInfluxProvinceData(provinceData, con)
+				fmt.Printf("%+v\n", dbResponse)
+				provinceData = nil
+				nationalData = retrieveNationalData(andamentoNazionale)
+				dbResponse = saveInfluxNationalData(nationalData, con, "state_data")
+				fmt.Printf("%+v\n", dbResponse)
+				nationalData = nil
+				regionData = retrieveNationalData(andamentoRegioni)
+				dbResponse = saveInfluxNationalData(regionData, con, "regions_data")
+				fmt.Printf("%+v\n", dbResponse)
+				regionData = nil
+				wordData = retrieveWorldWideData(andamentoMondiale)
+				dbResponse = saveInfluxWordlData(wordData, con)
+				fmt.Printf("%+v\n", dbResponse)
+			} else {
+				// Wait 5 minuts before check another time that a commit is made
+				time.Sleep(time.Duration(5 * time.Minute))
+				fmt.Println("Waiting 5 minuts")
+			}
+		} else {
+			fmt.Println("Current date is not in the interval")
+			t := time.Now()
+			d := startTime.Sub(t)
+			if d < 0 {
+				d = startTime.Sub(t) + 24*time.Hour
+			}
+			fmt.Printf("Sleeping %+v\n", d)
+			time.Sleep(d)
+		}
+	}
 }
 
 func initDatabase() {
-
 	var (
 		req       *http.Request
 		resp      *http.Response
-		err       error
+		c         *http.Client = &http.Client{}
 		bodyBytes []byte
+		err       error
+		apiUrl    string     = "http://localhost:8086"
+		resource  string     = "/query"
+		data      url.Values = url.Values{}
 	)
-	apiUrl := "http://localhost:8086"
-	resource := "/query"
-	data := url.Values{}
+
 	data.Set("q", "CREATE DATABASE "+DB_NAME)
 
 	u, _ := url.ParseRequestURI(apiUrl)
@@ -126,7 +201,6 @@ func initDatabase() {
 	u.RawQuery = data.Encode()
 	urlStr := fmt.Sprintf("%v", u)
 
-	c := &http.Client{}
 	if req, err = http.NewRequest("POST", urlStr, nil); err != nil {
 		panic(err)
 	}
@@ -408,4 +482,16 @@ func filterCasesForRegion(jsonData []ProvinceJsonData, regionName string) []Prov
 		}
 	}
 	return provinceData
+}
+
+// GetBody is delegated to retrieve the body from the given response
+func getBody(body io.ReadCloser) (string, error) {
+	var sb strings.Builder
+	var err error
+
+	defer body.Close()
+	if _, err = io.Copy(&sb, body); err != nil {
+		return "", nil
+	}
+	return sb.String(), nil
 }
