@@ -68,6 +68,10 @@ const andamentoMondiale string = "https://covid.ourworldindata.org/data/full_dat
 const DB_NAME string = "MyDB"
 const HOSTNAME string = "http://localhost"
 
+const telegramUrl string = "https://api.telegram.org/bot%s/sendMessage?chat_id=@covid19_dashboard&text=%s"
+const timeFormat string = "Mon Jan _2 15:04:05 2006"
+const telegramMessage string = "[%s] New data are available at https://covid19.hackx.com/d/OO1TC7XZk/covid-19-cases?orgId=1"
+
 type requestData struct {
 	Hours   int    `json:"hours"`
 	Minutes int    `json:"minutes"`
@@ -115,9 +119,15 @@ func main() {
 	}
 
 	lambdaUrl := flag.String("lambdaUrl", "", "Url related to the lambda delegated to verify that a commit is made")
+	telegramBot := flag.String("telegramBot", "", "Telegram bot id")
+
 	flag.Parse()
 	if *lambdaUrl == "" {
 		panic("No lambda url specified")
+	}
+
+	if *telegramBot == "" {
+		panic("No Telegram bot id specified")
 	}
 
 	if data, err = json.Marshal(reqData); err != nil {
@@ -146,6 +156,7 @@ func main() {
 
 			// Check the body in order to verify the result of the lambda
 			if strings.Contains(body, "true") {
+
 				// Initialize the InfluxDB client
 				if con, err = client.NewClient(client.Config{URL: *host}); err != nil {
 					panic(err)
@@ -171,10 +182,23 @@ func main() {
 				wordData = retrieveWorldWideData(andamentoMondiale)
 				dbResponse = saveInfluxWordlData(wordData, con)
 				fmt.Printf("%+v\n", dbResponse)
+
+				// message that have to be sent in telegram group
+				tgMessage := fmt.Sprintf(telegramMessage, time.Now().Format(timeFormat))
+				tgUrl := fmt.Sprintf(telegramUrl, *telegramBot, url.QueryEscape(tgMessage))
+
+				if resp, err = http.Get(tgUrl); err != nil {
+					panic(err)
+				}
+				if body, err = getBody(resp.Body); err != nil {
+					panic(err)
+				}
+				fmt.Printf("Response: %s\n", body)
+
 			} else {
 				// Wait 5 minuts before check another time that a commit is made
-				fmt.Println("Waiting 5 seconds")
-				time.Sleep(time.Duration(5 * time.Second))
+				fmt.Println("Waiting 5 Minutes")
+				time.Sleep(time.Duration(5 * time.Minute))
 			}
 		} else {
 			fmt.Println("Current date is not in the interval")
