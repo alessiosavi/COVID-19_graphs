@@ -79,6 +79,13 @@ type requestData struct {
 	Url     string `json:"url"`
 }
 
+type LambdaResponse struct {
+	Time         time.Time `json:"time"`
+	Updated      bool      `json:"updated"`
+	LatestCommit time.Time `json:"commitTime"`
+	TargetTime   time.Time `json:"targetTime"`
+}
+
 var startTime time.Time
 var endTime time.Time
 
@@ -105,6 +112,12 @@ func main() {
 		body         string             // Body related to the response (string)
 		err          error
 	)
+
+	if loc, err := time.LoadLocation("Europe/Rome"); err != nil {
+		panic(err)
+	} else {
+		time.Local = loc
+	}
 
 	t := time.Now()
 	startTime = time.Date(t.Year(), t.Month(), t.Day(), 17, 50, 0, 0, time.Local)
@@ -154,9 +167,15 @@ func main() {
 				panic(err)
 			}
 
-			// Check the body in order to verify the result of the lambda
-			if strings.Contains(body, "true") {
+			var lambdaResponse LambdaResponse
+			if err = json.Unmarshal([]byte(body), &lambdaResponse); err != nil {
+				panic(err)
+			}
 
+			fmt.Printf("Response: %+v\n", lambdaResponse)
+
+			// Check the body in order to verify the result of the lambda
+			if lambdaResponse.Updated {
 				// Initialize the InfluxDB client
 				if con, err = client.NewClient(client.Config{URL: *host}); err != nil {
 					panic(err)
