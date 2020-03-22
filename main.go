@@ -154,9 +154,10 @@ func main() {
 	// Initialize influxdb database
 	initDatabase()
 
+	currentTime := time.Now()
 	for {
 		// Check that the current time is in the span (from ~18:00 to ~19:00)
-		if inTimeSpan(time.Now()) {
+		if inTimeSpan(currentTime) {
 			// Send the request to the lambda
 			if resp, err = http.Post(*lambdaUrl, "application/json", bytes.NewBuffer(data)); err != nil {
 				panic(err)
@@ -213,6 +214,8 @@ func main() {
 					panic(err)
 				}
 				fmt.Printf("Response: %s\n", body)
+
+				currentTime = currentTime.Add(23 * time.Hour)
 
 			} else {
 				// Wait 5 minuts before check another time that a commit is made
