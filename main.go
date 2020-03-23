@@ -72,11 +72,25 @@ const telegramUrl string = "https://api.telegram.org/bot%s/sendMessage?chat_id=@
 const timeFormat string = "Mon Jan _2 15:04:05 2006"
 const telegramMessage string = "[%s] New data are available at https://covid19.hackx.com/d/OO1TC7XZk/covid-19-cases?orgId=1"
 
+const gitUrl string = "https://api.github.com/repos/pcm-dpc/COVID-19/commits"
+
 type requestData struct {
 	Hours   int    `json:"hours"`
 	Minutes int    `json:"minutes"`
 	Second  int    `json:"second"`
 	Url     string `json:"url"`
+}
+
+func (r *requestData) setTime(t time.Time) {
+	r.Hours = t.Hour()
+	r.Minutes = t.Minute()
+	r.Second = t.Second()
+}
+
+func (r *requestData) resetTime() {
+	r.Hours = 18
+	r.Minutes = 0
+	r.Second = 0
 }
 
 type LambdaResponse struct {
@@ -128,7 +142,7 @@ func main() {
 		Hours:   18,
 		Minutes: 0,
 		Second:  0,
-		Url:     "https://api.github.com/repos/pcm-dpc/COVID-19/commits",
+		Url:     gitUrl,
 	}
 
 	lambdaUrl := flag.String("lambdaUrl", "", "Url related to the lambda delegated to verify that a commit is made")
@@ -143,9 +157,6 @@ func main() {
 		panic("No Telegram bot id specified")
 	}
 
-	if data, err = json.Marshal(reqData); err != nil {
-		panic(err)
-	}
 	// Initialize the URL for the InfluxDB instance
 	if host, err = url.Parse(HOSTNAME + ":8086"); err != nil {
 		panic(err)
@@ -154,10 +165,12 @@ func main() {
 	// Initialize influxdb database
 	initDatabase()
 
-	currentTime := time.Now()
 	for {
 		// Check that the current time is in the span (from ~18:00 to ~19:00)
-		if inTimeSpan(currentTime) {
+		if inTimeSpan(time.Now()) {
+			if data, err = json.Marshal(reqData); err != nil {
+				panic(err)
+			}
 			// Send the request to the lambda
 			if resp, err = http.Post(*lambdaUrl, "application/json", bytes.NewBuffer(data)); err != nil {
 				panic(err)
@@ -214,9 +227,7 @@ func main() {
 					panic(err)
 				}
 				fmt.Printf("Response: %s\n", body)
-
-				currentTime = currentTime.Add(23 * time.Hour)
-
+				reqData.setTime(time.Now())
 			} else {
 				// Wait 5 minuts before check another time that a commit is made
 				fmt.Println("Waiting 5 Minutes")
@@ -227,7 +238,8 @@ func main() {
 			t := time.Now()
 			d := startTime.Sub(t)
 			if d < 0 {
-				d = startTime.Sub(t) + 24*time.Hour
+				d += 23 * time.Hour
+				reqData.resetTime()
 			}
 			fmt.Printf("Sleeping %+v\n", d)
 			time.Sleep(d)
