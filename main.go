@@ -130,7 +130,7 @@ func main() {
 		err          error
 	)
 
-	if f, err = os.OpenFile("log.txt", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666); err != nil {
+	if f, err = os.OpenFile("log/log.txt", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666); err != nil {
 		panic(err)
 	}
 	log.SetOutput(f)
