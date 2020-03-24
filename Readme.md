@@ -4,14 +4,9 @@ Analyze the cases related to the COVID19 in Italy.
 
 ## Demo
 
-A running instance is available at:
+A running public instance is available at:
 
-http://covid19.hackx.com:3000/d/OO1TC7XZk/covid-19-cases?orgId=1
-
-You have to log-in with the following credentials:
-
- - Username: `guest`
- - Password: `password`
+https://covid19.hackx.com/d/OO1TC7XZk/covid-19-cases?orgId=1
 
 ## Usage
 
