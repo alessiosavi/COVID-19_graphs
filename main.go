@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -118,6 +120,7 @@ func main() {
 		con          *client.Client     // Client for push data into InfluxDB
 		host         *url.URL           // Host related to the InfluxDB instance
 		resp         *http.Response     // Response of the http request
+		f            *os.File           // LogFile
 		provinceData []ProvinceJsonData // Data related to the provinces
 		nationalData []RegionsJsonData  // Data related to the nations
 		regionData   []RegionsJsonData  // Data related to the regions
@@ -126,6 +129,12 @@ func main() {
 		body         string             // Body related to the response (string)
 		err          error
 	)
+
+	if f, err = os.OpenFile("log.txt", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666); err != nil {
+		panic(err)
+	}
+	log.SetOutput(f)
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
 
 	if loc, err := time.LoadLocation("Europe/Rome"); err != nil {
 		panic(err)
@@ -186,7 +195,7 @@ func main() {
 				panic(err)
 			}
 
-			fmt.Printf("Response: %+v\n", lambdaResponse)
+			log.Printf("Response: %+v\n", lambdaResponse)
 
 			// Check the body in order to verify the result of the lambda
 			if lambdaResponse.Updated {
@@ -202,19 +211,19 @@ func main() {
 				// Retrieve the data and save into InfluxDB
 				provinceData = retrieveProvinceData(andamentoProvince)
 				dbResponse := saveInfluxProvinceData(provinceData, con)
-				fmt.Printf("%+v\n", dbResponse)
+				log.Printf("%+v\n", dbResponse)
 				provinceData = nil
 				nationalData = retrieveNationalData(andamentoNazionale)
 				dbResponse = saveInfluxNationalData(nationalData, con, "state_data")
-				fmt.Printf("%+v\n", dbResponse)
+				log.Printf("%+v\n", dbResponse)
 				nationalData = nil
 				regionData = retrieveNationalData(andamentoRegioni)
 				dbResponse = saveInfluxNationalData(regionData, con, "regions_data")
-				fmt.Printf("%+v\n", dbResponse)
+				log.Printf("%+v\n", dbResponse)
 				regionData = nil
 				wordData = retrieveWorldWideData(andamentoMondiale)
 				dbResponse = saveInfluxWordlData(wordData, con)
-				fmt.Printf("%+v\n", dbResponse)
+				log.Printf("%+v\n", dbResponse)
 
 				// message that have to be sent in telegram group
 				tgMessage := fmt.Sprintf(telegramMessage, time.Now().Format(timeFormat))
@@ -226,22 +235,22 @@ func main() {
 				if body, err = getBody(resp.Body); err != nil {
 					panic(err)
 				}
-				fmt.Printf("Response: %s\n", body)
+				log.Printf("Response: %s\n", body)
 				reqData.setTime(time.Now())
 			} else {
 				// Wait 5 minuts before check another time that a commit is made
-				fmt.Println("Waiting 5 Minutes")
+				log.Println("Waiting 5 Minutes")
 				time.Sleep(time.Duration(5 * time.Minute))
 			}
 		} else {
-			fmt.Println("Current date is not in the interval")
+			log.Println("Current date is not in the interval")
 			t := time.Now()
 			d := startTime.Sub(t)
 			if d < 0 {
 				d += 23 * time.Hour
 				reqData.resetTime()
 			}
-			fmt.Printf("Sleeping %+v\n", d)
+			log.Printf("Sleeping %+v\n", d)
 			time.Sleep(d)
 		}
 	}
@@ -280,9 +289,9 @@ func initDatabase() {
 		}
 		_ = resp.Body.Close()
 		bodyString := string(bodyBytes)
-		fmt.Printf("Error: %s\n", bodyString)
+		log.Printf("Error: %s\n", bodyString)
 	} else {
-		fmt.Printf("Database [%s] initialized\n", DB_NAME)
+		log.Printf("Database [%s] initialized\n", DB_NAME)
 	}
 }
 
@@ -293,7 +302,7 @@ func saveInfluxProvinceData(provinceData []ProvinceJsonData, con *client.Client)
 	// Initialize the list of event that have to be pushed into InfluxDB
 	pts := make([]client.Point, len(provinceData))
 	for i := range provinceData {
-		fmt.Println("Case: ", provinceData[i])
+		log.Println("Case: ", provinceData[i])
 		pts[i] = client.Point{
 			Measurement: "all_province_data",
 			Tags:        nil,
@@ -339,7 +348,7 @@ func retrieveProvinceData(urlPath string) []ProvinceJsonData {
 		}
 	}
 
-	fmt.Printf("Retrieved %d data\n", len(jsonData))
+	log.Printf("Retrieved %d data\n", len(jsonData))
 
 	// Set the local time
 	if loc, err := time.LoadLocation("Europe/Rome"); err != nil {
@@ -381,7 +390,7 @@ func retrieveNationalData(urlPath string) []RegionsJsonData {
 
 	}
 
-	fmt.Printf("Retrieved %d data\n", len(jsonData))
+	log.Printf("Retrieved %d data\n", len(jsonData))
 
 	// Set the local time
 	if loc, err := time.LoadLocation("Europe/Rome"); err != nil {
@@ -400,7 +409,7 @@ func saveInfluxNationalData(provinceData []RegionsJsonData, con *client.Client, 
 	// Initialize the list of event that have to be pushed into InfluxDB
 	pts := make([]client.Point, len(provinceData))
 	for i := range provinceData {
-		fmt.Println("Case: ", provinceData[i])
+		log.Println("Case: ", provinceData[i])
 
 		var m map[string]interface{} = make(map[string]interface{})
 		m["codice_regione"] = provinceData[i].CodiceRegione
@@ -498,7 +507,7 @@ func saveInfluxWordlData(worldData []WorldWideData, con *client.Client) *client.
 	// Initialize the list of event that have to be pushed into InfluxDB
 	pts := make([]client.Point, len(worldData))
 	for i := range worldData {
-		fmt.Println("Case: ", worldData[i])
+		log.Println("Case: ", worldData[i])
 
 		var m map[string]interface{} = make(map[string]interface{})
 		m["total_deaths"] = worldData[i].TotalDeaths
