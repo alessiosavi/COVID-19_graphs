@@ -340,7 +340,7 @@ func retrieveProvinceData(urlPath string) []ProvinceJsonData {
 		if jsonData[i].TotaleCasi > 0 {
 			var t time.Time
 			// Parse the time into a standard one
-			if t, err = fmtdate.Parse("YYYY-MM-DD hh:mm:ss", jsonData[i].Data); err != nil {
+			if t, err = fmtdate.Parse("YYYY-MM-DDThh:mm:ss", jsonData[i].Data); err != nil {
 				panic(err)
 			}
 			jsonData[i].Datetime = t
@@ -382,7 +382,7 @@ func retrieveNationalData(urlPath string) []RegionsJsonData {
 	for i := range jsonData {
 		var t time.Time
 		// Parse the time into a standard one
-		if t, err = fmtdate.Parse("YYYY-MM-DD hh:mm:ss", jsonData[i].Data); err != nil {
+		if t, err = fmtdate.Parse("YYYY-MM-DDThh:mm:ss", jsonData[i].Data); err != nil {
 			panic(err)
 		}
 		jsonData[i].Datetime = t
