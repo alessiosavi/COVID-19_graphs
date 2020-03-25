@@ -4,3 +4,4 @@ docker_data/
 start.sh
 nohup.out
 GoCovidGraph
+log/

@@ -243,10 +243,12 @@ func main() {
 				time.Sleep(time.Duration(5 * time.Minute))
 			}
 		} else {
-			log.Println("Current date is not in the interval")
+			log.Printf("Current [%+v] date is not in the interval\n", time.Now())
 			t := time.Now()
 			d := startTime.Sub(t)
 			if d < 0 {
+				startTime.Add(23 * time.Hour)
+				endTime.Add(23 * time.Hour)
 				d += 23 * time.Hour
 				reqData.resetTime()
 			}
