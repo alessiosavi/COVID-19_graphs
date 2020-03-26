@@ -247,8 +247,8 @@ func main() {
 			t := time.Now()
 			d := startTime.Sub(t)
 			if d < 0 {
-				startTime.Add(23 * time.Hour)
-				endTime.Add(23 * time.Hour)
+				startTime = startTime.Add(24 * time.Hour)
+				endTime = endTime.Add(24 * time.Hour)
 				d += 23 * time.Hour
 				reqData.resetTime()
 			}
