@@ -63,6 +63,9 @@ type RegionsJsonData struct {
 	Datetime                  time.Time
 }
 
+const USAGE_1 = "SHIFT + Click per escludere una misurazione dal grafico"
+const USAGE_2 = "Click per mostrare solo la misurazione"
+
 const andamentoProvince string = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-province.json"
 const andamentoNazionale string = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-andamento-nazionale.json"
 const andamentoRegioni string = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-regioni.json"
@@ -144,7 +147,7 @@ func main() {
 
 	t := time.Now()
 	startTime = time.Date(t.Year(), t.Month(), t.Day(), 17, 50, 0, 0, time.Local)
-	endTime = time.Date(t.Year(), t.Month(), t.Day(), 19, 0, 0, 0, time.Local)
+	endTime = time.Date(t.Year(), t.Month(), t.Day(), 22, 0, 0, 0, time.Local)
 
 	// Request body to send to the lambda in order to verify that the given repository have a commit after the given time
 	reqData := requestData{
@@ -223,6 +226,9 @@ func main() {
 				regionData = nil
 				wordData = retrieveWorldWideData(andamentoMondiale)
 				dbResponse = saveInfluxWordlData(wordData, con)
+				log.Printf("%+v\n", dbResponse)
+
+				dbResponse = retrieveTotalRegionData(andamentoRegioni, con, "total_regions_data", 100)
 				log.Printf("%+v\n", dbResponse)
 
 				// message that have to be sent in telegram group
@@ -312,6 +318,50 @@ func saveInfluxProvinceData(provinceData []ProvinceJsonData, con *client.Client)
 			Fields:      map[string]interface{}{provinceData[i].DenominazioneProvincia: provinceData[i].TotaleCasi}}
 	}
 
+	bps := client.BatchPoints{Points: pts, Database: DB_NAME}
+
+	if dbResponse, err = con.Write(bps); err != nil {
+		panic(err)
+	}
+	return dbResponse
+}
+
+func retrieveTotalRegionData(urlPath string, con *client.Client, dbName string, minCases int) *client.Response {
+	var httpResponse *http.Response
+	var dbResponse *client.Response
+	var err error
+	var jsonData []RegionsJsonData
+	// Retrieve the fresh data related to covid-19
+	if httpResponse, err = http.Get(urlPath); err != nil {
+		panic(err)
+	}
+	defer httpResponse.Body.Close()
+
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(httpResponse.Body)
+	newBytes := buf.Bytes()
+	trimmedBytes := bytes.Trim(newBytes, "\xef\xbb\xbf")
+	json.Unmarshal(trimmedBytes, &jsonData)
+	_ = httpResponse.Body.Close()
+
+	var pts []client.Point
+	for _, d := range jsonData {
+		if d.TotaleCasi >= minCases {
+			var m map[string]interface{} = make(map[string]interface{})
+			var t time.Time
+			// Parse the time into a standard one
+			if t, err = fmtdate.Parse("YYYY-MM-DDThh:mm:ss", d.Data); err != nil {
+				panic(err)
+			}
+			m[d.DenominazioneRegione] = d.TotaleCasi
+			pt := client.Point{
+				Measurement: dbName,
+				Tags:        map[string]string{"regione": d.DenominazioneRegione},
+				Time:        t,
+				Fields:      m}
+			pts = append(pts, pt)
+		}
+	}
 	bps := client.BatchPoints{Points: pts, Database: DB_NAME}
 
 	if dbResponse, err = con.Write(bps); err != nil {
