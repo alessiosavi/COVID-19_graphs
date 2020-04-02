@@ -54,8 +54,8 @@ type RegionsJsonData struct {
 	TerapiaIntensiva          int     `json:"terapia_intensiva"`
 	TotaleOspedalizzati       int     `json:"totale_ospedalizzati"`
 	IsolamentoDomiciliare     int     `json:"isolamento_domiciliare"`
-	TotaleAttualmentePositivi int     `json:"totale_attualmente_positivi"`
-	NuoviAttualmentePositivi  int     `json:"nuovi_attualmente_positivi"`
+	TotaleAttualmentePositivi int     `json:"totale_positivi"`
+	NuoviAttualmentePositivi  int     `json:"nuovi_positivi"`
 	DimessiGuariti            int     `json:"dimessi_guariti"`
 	Deceduti                  int     `json:"deceduti"`
 	TotaleCasi                int     `json:"totale_casi"`
@@ -63,13 +63,16 @@ type RegionsJsonData struct {
 	Datetime                  time.Time
 }
 
-const USAGE_1 = "SHIFT + Click per escludere una misurazione dal grafico"
-const USAGE_2 = "Click per mostrare solo la misurazione"
-
 const andamentoProvince string = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-province.json"
 const andamentoNazionale string = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-andamento-nazionale.json"
 const andamentoRegioni string = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-regioni.json"
 const andamentoMondiale string = "https://covid.ourworldindata.org/data/full_data.csv"
+
+// var sha256_andamentoProvince [32]byte
+// var sha256_andamentoNazionale [32]byte
+// var sha256_andamentoRegioni [32]byte
+// var sha256_andamentoMondiale [32]byte
+
 const DB_NAME string = "MyDB"
 const HOSTNAME string = "http://localhost"
 
@@ -147,7 +150,7 @@ func main() {
 
 	t := time.Now()
 	startTime = time.Date(t.Year(), t.Month(), t.Day(), 17, 50, 0, 0, time.Local)
-	endTime = time.Date(t.Year(), t.Month(), t.Day(), 22, 0, 0, 0, time.Local)
+	endTime = time.Date(t.Year(), t.Month(), t.Day(), 19, 0, 0, 0, time.Local)
 
 	// Request body to send to the lambda in order to verify that the given repository have a commit after the given time
 	reqData := requestData{
@@ -388,6 +391,15 @@ func retrieveProvinceData(urlPath string) []ProvinceJsonData {
 	_ = httpResponse.Body.Close()
 
 	var data []ProvinceJsonData
+	// tempSHA := sha256.Sum256(buf.Bytes())
+	// if tempSHA == sha256_andamentoProvince { // No modification was made for this commit
+	// 	// Return an empty array, is not necessary to perform any update into influxdb
+	// 	log.Printf("File %s was not modified with this commit!", andamentoProvince)
+	// 	return data
+	// }
+	// // update the SHA
+	// sha256_andamentoProvince = tempSHA
+
 	for i := range jsonData {
 		if jsonData[i].TotaleCasi > 0 {
 			var t time.Time
@@ -423,14 +435,27 @@ func retrieveNationalData(urlPath string) []RegionsJsonData {
 	defer httpResponse.Body.Close()
 
 	buf := new(bytes.Buffer)
-	buf.ReadFrom(httpResponse.Body)
+	if _, err = buf.ReadFrom(httpResponse.Body); err != nil {
+		log.Fatalf("Unable to read from national data response buffer! %s", err.Error())
+	}
 	newBytes := buf.Bytes()
 	trimmedBytes := bytes.Trim(newBytes, "\xef\xbb\xbf")
-	json.Unmarshal(trimmedBytes, &jsonData)
-	_ = httpResponse.Body.Close()
+	if err = json.Unmarshal(trimmedBytes, &jsonData); err != nil {
+		log.Fatalf("Unable to unmarshall national data! %s", err.Error())
+	}
 	_ = httpResponse.Body.Close()
 
 	var data []RegionsJsonData
+
+	// tempSHA := sha256.Sum256(buf.Bytes())
+	// if tempSHA == sha256_andamentoNazionale { // No modification was made for this commit
+	// 	// Return an empty array, is not necessary to perform any update into influxdb
+	// 	log.Printf("File %s was not modified with this commit!", andamentoNazionale)
+	// 	return data
+	// }
+	// // update the SHA
+	// sha256_andamentoProvince = tempSHA
+
 	for i := range jsonData {
 		var t time.Time
 		// Parse the time into a standard one
@@ -506,12 +531,15 @@ func retrieveWorldWideData(urlPath string) []WorldWideData {
 		panic(err)
 	}
 	defer httpResponse.Body.Close()
+
+	// TODO: copy the response body in a buffer for perform multiple read
 	if lines, err = csv.NewReader(httpResponse.Body).ReadAll(); err != nil {
 		panic(err)
 	}
 	_ = httpResponse.Body.Close()
 
 	var wordWideData []WorldWideData = make([]WorldWideData, len(lines))
+
 	for i := 1; i < len(lines); i++ {
 		var t time.Time
 		// Parse the time into a standard one
